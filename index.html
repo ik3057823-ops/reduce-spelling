@@ -51,4 +51,303 @@
     button.tile:focus { outline: 2px solid var(--brand); outline-offset: 2px; }
 
     .slot {
-      disp
+      display: grid; place-items: center; height: 48px; border-radius: 12px;
+      border: 2px dashed var(--soft-2); background: #fff; font-weight: 700;
+    }
+    .slot.space { background: transparent; border: none; }
+    .slot.filled { border-style: solid; border-color: var(--soft-2); }
+    .slot.ok { background: #ecfdf5; border-color: #86efac; }
+    .slot.bad { background: #fef2f2; border-color: #fecaca; }
+
+    .controls { display:flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .btn {
+      appearance:none; border:1px solid var(--soft-2); background:#fff; color:var(--ink);
+      padding:10px 14px; border-radius: 12px; cursor:pointer; font-weight:600;
+      touch-action: manipulation;
+    }
+    .btn.primary { background: var(--brand); color:#fff; border-color: var(--brand); }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .msg { margin-top: 14px; font-size: 14px; }
+    .msg.ok { color: var(--ok); }
+    .msg.bad { color: var(--bad); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    @media (max-width: 480px) {
+      .wrap { padding: 12px; }
+      button.tile { font-size: 18px; padding: 8px 0; }
+      .slots, .bank { gap: 6px; padding: 8px; }
+      .controls { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" role="region" aria-labelledby="title">
+      <h1 id="title">Build the Words</h1>
+      <p class="sub">Click or drag letters into the slots in the correct order.</p>
+
+      <div class="zones" aria-live="polite">
+        <div class="row" aria-label="Answer slots">
+          <span class="label">Your answer</span>
+          <div id="slots" class="slots"></div>
+        </div>
+        <div class="row" aria-label="Letter bank">
+          <span class="label">Letter bank</span>
+          <div id="bank" class="bank"></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn primary" id="checkBtn">Check</button>
+        <button class="btn" id="resetBtn">Reset</button>
+        <button class="btn" id="shuffleBtn">Shuffle</button>
+        <button class="btn ghost" id="sayBtn">🔈 Say it</button>
+        <button class="btn" id="prevBtn">⟵ Previous</button>
+        <button class="btn" id="nextBtn">Next ⟶</button>
+      </div>
+
+      <div id="message" class="msg" role="status" aria-live="polite"></div>
+      <p class="sr-only" id="live"></p>
+    </div>
+  </div>
+
+  <script>
+    // ------- Words
+    const wordList = [
+      "diet",
+      "junk food",
+      "whole food",
+      "food security",
+      "takeaway",
+      "processed",
+      "perishable",
+      "wholesome",
+      "organic",
+      "nutritious",
+      "consume",
+      "tempted",
+      "reduce",
+      "sample",
+      "digest"
+    ];
+
+    // ------- State
+    let currentIndex = 0;
+    let correctWord = wordList[currentIndex];
+
+    // Mapping: UI indices (including spaces) -> playable letter indices
+    let playableIndices = [];        // e.g., for "a b", [0,2]
+    let uiToPlayable = [];           // length = correctWord.length, value = playable index or -1
+    let slotsPlay = [];              // only for letters, length = playableIndices.length, values = {id,ch} or null
+    let bank = [];                   // array of tiles {id,ch}
+
+    const $ = sel => document.querySelector(sel);
+
+    // Build tiles with unique ids for duplicates
+    function makeTiles(word) {
+      const tiles = [];
+      const count = {};
+      for (const ch of word) {
+        if (ch === " ") continue;
+        count[ch] = (count[ch] || 0) + 1;
+        tiles.push({ id: ch + "-" + count[ch], ch });
+      }
+      return tiles;
+    }
+
+    function buildIndexMaps(word) {
+      playableIndices = [];
+      uiToPlayable = new Array(word.length).fill(-1);
+      for (let i = 0; i < word.length; i++) {
+        if (word[i] !== " ") {
+          const p = playableIndices.length;
+          playableIndices.push(i);
+          uiToPlayable[i] = p;
+        }
+      }
+      slotsPlay = new Array(playableIndices.length).fill(null);
+    }
+
+    function shuffle(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function firstEmptyPlayable() {
+      for (let p = 0; p < slotsPlay.length; p++) {
+        if (slotsPlay[p] === null) return p;
+      }
+      return -1;
+    }
+
+    // ------- Render
+    function render() {
+      // Bank
+      const bankEl = $("#bank");
+      bankEl.innerHTML = "";
+      bank.forEach(t => {
+        const b = document.createElement("button");
+        b.className = "tile";
+        b.textContent = t.ch;
+        b.draggable = true;
+        b.dataset.id = t.id;
+
+        // Click: place into first empty playable slot
+        b.addEventListener("click", () => {
+          const p = firstEmptyPlayable();
+          if (p !== -1) moveTileToPlayable(t.id, p);
+        });
+
+        b.addEventListener("dragstart", e => {
+          e.dataTransfer.setData("text/plain", JSON.stringify({ id: t.id }));
+        });
+
+        bankEl.appendChild(b);
+      });
+
+      // Slots (UI indices — include spaces as visual gaps)
+      const slotsEl = $("#slots");
+      slotsEl.innerHTML = "";
+      for (let i = 0; i < correctWord.length; i++) {
+        const ch = correctWord[i];
+        const cell = document.createElement("div");
+
+        if (ch === " ") {
+          cell.className = "slot space";
+          cell.textContent = " ";
+        } else {
+          const p = uiToPlayable[i];
+          const filled = slotsPlay[p] ? " filled" : "";
+          cell.className = "slot" + filled;
+          cell.textContent = slotsPlay[p]?.ch || "";
+
+          cell.addEventListener("dragover", e => e.preventDefault());
+          cell.addEventListener("drop", e => {
+            e.preventDefault();
+            const data = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
+            if (!data.id) return;
+            moveTileToPlayable(data.id, p);
+          });
+
+          cell.addEventListener("click", () => {
+            if (slotsPlay[p]) removeFromPlayable(p);
+          });
+        }
+
+        slotsEl.appendChild(cell);
+      }
+
+      // Nav buttons
+      $("#prevBtn").disabled = currentIndex === 0;
+      $("#nextBtn").disabled = currentIndex === wordList.length - 1;
+    }
+
+    // ------- Actions
+    function moveTileToPlayable(tileId, pIndex) {
+      if (slotsPlay[pIndex]) return; // already filled
+
+      const i = bank.findIndex(t => t.id === tileId);
+      if (i === -1) return;
+
+      const [t] = bank.splice(i, 1);
+      slotsPlay[pIndex] = t;
+      render();
+    }
+
+    function removeFromPlayable(pIndex) {
+      const t = slotsPlay[pIndex];
+      if (!t) return;
+      slotsPlay[pIndex] = null;
+      bank.push(t);
+      render();
+    }
+
+    function resetFeedback() {
+      $("#message").className = "msg";
+      document.querySelectorAll(".slot").forEach(s => s.classList.remove("ok", "bad"));
+    }
+
+    function doCheck() {
+      resetFeedback();
+
+      // Ensure all playable slots are filled
+      if (slotsPlay.some(v => v === null)) {
+        $("#message").textContent = "Fill all slots, then click Check.";
+        $("#message").classList.add("bad");
+        return;
+      }
+
+      // Build user's attempt including spaces
+      let user = "";
+      for (let i = 0; i < correctWord.length; i++) {
+        if (correctWord[i] === " ") {
+          user += " ";
+        } else {
+          const p = uiToPlayable[i];
+          user += slotsPlay[p].ch;
+        }
+      }
+
+      if (user === correctWord) {
+        document.querySelectorAll("#slots .slot").forEach((s, i) => {
+          if (correctWord[i] !== " ") s.classList.add("ok");
+        });
+        $("#message").textContent = "Great job! ✅";
+        $("#message").classList.add("ok");
+      } else {
+        document.querySelectorAll("#slots .slot").forEach((s, i) => {
+          if (correctWord[i] === " ") return;
+          const p = uiToPlayable[i];
+          const good = slotsPlay[p] && slotsPlay[p].ch === correctWord[i];
+          s.classList.add(good ? "ok" : "bad");
+        });
+        $("#message").textContent = "Not quite. Incorrect letters are highlighted.";
+        $("#message").classList.add("bad");
+      }
+    }
+
+    function sayWord() {
+      try {
+        const u = new SpeechSynthesisUtterance(correctWord);
+        u.lang = "en-US";
+        speechSynthesis.speak(u);
+      } catch (e) {}
+    }
+
+    function doReset(shuffleToo = false) {
+      resetFeedback();
+      buildIndexMaps(correctWord);
+      bank = shuffleToo ? shuffle(makeTiles(correctWord)) : makeTiles(correctWord);
+      render();
+      $("#message").textContent = `Word ${currentIndex + 1} of ${wordList.length}`;
+    }
+
+    function loadWord(index) {
+      currentIndex = index;
+      correctWord = wordList[currentIndex];
+      doReset(true);
+    }
+
+    // ------- Controls
+    $("#checkBtn").addEventListener("click", doCheck);
+    $("#resetBtn").addEventListener("click", () => doReset(false));
+    $("#shuffleBtn").addEventListener("click", () => doReset(true));
+    $("#sayBtn").addEventListener("click", sayWord);
+    $("#nextBtn").addEventListener("click", () => {
+      if (currentIndex < wordList.length - 1) loadWord(currentIndex + 1);
+    });
+    $("#prevBtn").addEventListener("click", () => {
+      if (currentIndex > 0) loadWord(currentIndex - 1);
+    });
+
+    // ------- Init
+    loadWord(0);
+  </script>
+</body>
+</html>
