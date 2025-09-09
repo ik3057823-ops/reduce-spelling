@@ -67,55 +67,48 @@
     }
     .btn.primary { background: var(--brand); color:#fff; border-color: var(--brand); }
     .btn.ghost { background: transparent; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
 
     .msg { margin-top: 14px; font-size: 14px; }
     .msg.ok { color: var(--ok); }
     .msg.bad { color: var(--bad); }
-    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-
-    @media (max-width: 480px) {
-      .wrap { padding: 12px; }
-      button.tile { font-size: 18px; padding: 8px 0; }
-      .slots, .bank { gap: 6px; padding: 8px; }
-      .controls { justify-content: flex-start; }
-    }
+    .results { text-align:center; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="card" role="region" aria-labelledby="title">
+    <div class="card" id="gameCard">
       <h1 id="title">Build the Words</h1>
       <p class="sub">Click or drag letters into the slots in the correct order.</p>
 
       <div class="zones" aria-live="polite">
-        <div class="row" aria-label="Answer slots">
+        <div class="row">
           <span class="label">Your answer</span>
           <div id="slots" class="slots"></div>
         </div>
-        <div class="row" aria-label="Letter bank">
+        <div class="row">
           <span class="label">Letter bank</span>
           <div id="bank" class="bank"></div>
         </div>
       </div>
 
       <div class="controls">
-        <button class="btn primary" id="checkBtn">Check</button>
         <button class="btn" id="resetBtn">Reset</button>
         <button class="btn" id="shuffleBtn">Shuffle</button>
         <button class="btn ghost" id="sayBtn">🔈 Say it</button>
-        <button class="btn" id="prevBtn">⟵ Previous</button>
-        <button class="btn" id="nextBtn">Next ⟶</button>
       </div>
 
       <div id="message" class="msg" role="status" aria-live="polite"></div>
-      <p class="sr-only" id="live"></p>
+    </div>
+
+    <div class="card results" id="resultsCard" style="display:none">
+      <h1>Results</h1>
+      <p id="resultsText"></p>
+      <button class="btn primary" id="tryAgainBtn">Try Again</button>
     </div>
   </div>
 
   <script>
-    // ------- Words
-    const wordList = [
+    const wordListOriginal = [
       "diet",
       "junk food",
       "whole food",
@@ -133,19 +126,16 @@
       "digest"
     ];
 
-    // ------- State
-    let currentIndex = 0;
-    let correctWord = wordList[currentIndex];
-
-    // Mapping: UI indices (including spaces) -> playable letter indices
-    let playableIndices = [];        // e.g., for "a b", [0,2]
-    let uiToPlayable = [];           // length = correctWord.length, value = playable index or -1
-    let slotsPlay = [];              // only for letters, length = playableIndices.length, values = {id,ch} or null
-    let bank = [];                   // array of tiles {id,ch}
+    let queue = [];           // words to attempt
+    let currentWord = "";
+    let slotsPlay = [];       // only letters
+    let bank = [];
+    let playableIndices = [];
+    let uiToPlayable = [];
+    let results = { correct:0, wrong:0 };
 
     const $ = sel => document.querySelector(sel);
 
-    // Build tiles with unique ids for duplicates
     function makeTiles(word) {
       const tiles = [];
       const count = {};
@@ -186,7 +176,6 @@
       return -1;
     }
 
-    // ------- Render
     function render() {
       // Bank
       const bankEl = $("#bank");
@@ -197,25 +186,21 @@
         b.textContent = t.ch;
         b.draggable = true;
         b.dataset.id = t.id;
-
-        // Click: place into first empty playable slot
         b.addEventListener("click", () => {
           const p = firstEmptyPlayable();
           if (p !== -1) moveTileToPlayable(t.id, p);
         });
-
         b.addEventListener("dragstart", e => {
           e.dataTransfer.setData("text/plain", JSON.stringify({ id: t.id }));
         });
-
         bankEl.appendChild(b);
       });
 
-      // Slots (UI indices — include spaces as visual gaps)
+      // Slots
       const slotsEl = $("#slots");
       slotsEl.innerHTML = "";
-      for (let i = 0; i < correctWord.length; i++) {
-        const ch = correctWord[i];
+      for (let i = 0; i < currentWord.length; i++) {
+        const ch = currentWord[i];
         const cell = document.createElement("div");
 
         if (ch === " ") {
@@ -226,7 +211,6 @@
           const filled = slotsPlay[p] ? " filled" : "";
           cell.className = "slot" + filled;
           cell.textContent = slotsPlay[p]?.ch || "";
-
           cell.addEventListener("dragover", e => e.preventDefault());
           cell.addEventListener("drop", e => {
             e.preventDefault();
@@ -234,30 +218,21 @@
             if (!data.id) return;
             moveTileToPlayable(data.id, p);
           });
-
-          cell.addEventListener("click", () => {
-            if (slotsPlay[p]) removeFromPlayable(p);
-          });
+          cell.addEventListener("click", () => { if (slotsPlay[p]) removeFromPlayable(p); });
         }
 
         slotsEl.appendChild(cell);
       }
-
-      // Nav buttons
-      $("#prevBtn").disabled = currentIndex === 0;
-      $("#nextBtn").disabled = currentIndex === wordList.length - 1;
     }
 
-    // ------- Actions
     function moveTileToPlayable(tileId, pIndex) {
-      if (slotsPlay[pIndex]) return; // already filled
-
+      if (slotsPlay[pIndex]) return;
       const i = bank.findIndex(t => t.id === tileId);
       if (i === -1) return;
-
       const [t] = bank.splice(i, 1);
       slotsPlay[pIndex] = t;
       render();
+      autoCheck();
     }
 
     function removeFromPlayable(pIndex) {
@@ -268,86 +243,78 @@
       render();
     }
 
-    function resetFeedback() {
-      $("#message").className = "msg";
-      document.querySelectorAll(".slot").forEach(s => s.classList.remove("ok", "bad"));
-    }
+    function autoCheck() {
+      // if not all filled, wait
+      if (slotsPlay.some(v => v === null)) return;
 
-    function doCheck() {
-      resetFeedback();
-
-      // Ensure all playable slots are filled
-      if (slotsPlay.some(v => v === null)) {
-        $("#message").textContent = "Fill all slots, then click Check.";
-        $("#message").classList.add("bad");
-        return;
-      }
-
-      // Build user's attempt including spaces
+      // build user answer including spaces
       let user = "";
-      for (let i = 0; i < correctWord.length; i++) {
-        if (correctWord[i] === " ") {
-          user += " ";
-        } else {
+      for (let i = 0; i < currentWord.length; i++) {
+        if (currentWord[i] === " ") user += " ";
+        else {
           const p = uiToPlayable[i];
           user += slotsPlay[p].ch;
         }
       }
 
-      if (user === correctWord) {
-        document.querySelectorAll("#slots .slot").forEach((s, i) => {
-          if (correctWord[i] !== " ") s.classList.add("ok");
-        });
-        $("#message").textContent = "Great job! ✅";
-        $("#message").classList.add("ok");
+      if (user === currentWord) {
+        results.correct++;
       } else {
-        document.querySelectorAll("#slots .slot").forEach((s, i) => {
-          if (correctWord[i] === " ") return;
-          const p = uiToPlayable[i];
-          const good = slotsPlay[p] && slotsPlay[p].ch === correctWord[i];
-          s.classList.add(good ? "ok" : "bad");
-        });
-        $("#message").textContent = "Not quite. Incorrect letters are highlighted.";
-        $("#message").classList.add("bad");
+        results.wrong++;
+        queue.push(currentWord); // put back at end
       }
+
+      // move to next after short pause
+      setTimeout(nextWord, 600);
     }
 
     function sayWord() {
       try {
-        const u = new SpeechSynthesisUtterance(correctWord);
+        const u = new SpeechSynthesisUtterance(currentWord);
         u.lang = "en-US";
         speechSynthesis.speak(u);
       } catch (e) {}
     }
 
-    function doReset(shuffleToo = false) {
-      resetFeedback();
-      buildIndexMaps(correctWord);
-      bank = shuffleToo ? shuffle(makeTiles(correctWord)) : makeTiles(correctWord);
+    function doReset(shuffleToo=false) {
+      buildIndexMaps(currentWord);
+      bank = shuffleToo ? shuffle(makeTiles(currentWord)) : makeTiles(currentWord);
       render();
-      $("#message").textContent = `Word ${currentIndex + 1} of ${wordList.length}`;
+      $("#message").textContent = `Word ${wordListOriginal.length - queue.length + 1} of ${wordListOriginal.length}`;
     }
 
-    function loadWord(index) {
-      currentIndex = index;
-      correctWord = wordList[currentIndex];
+    function nextWord() {
+      if (queue.length === 0) {
+        showResults();
+        return;
+      }
+      currentWord = queue.shift();
       doReset(true);
     }
 
-    // ------- Controls
-    $("#checkBtn").addEventListener("click", doCheck);
+    function showResults() {
+      $("#gameCard").style.display = "none";
+      $("#resultsCard").style.display = "block";
+      $("#resultsText").textContent =
+        `You spelled ${results.correct} correctly and ${results.wrong} incorrectly.`;
+    }
+
+    function startGame() {
+      queue = wordListOriginal.slice();
+      results = { correct:0, wrong:0 };
+      $("#resultsCard").style.display = "none";
+      $("#gameCard").style.display = "block";
+      nextWord();
+    }
+
+    // Controls
     $("#resetBtn").addEventListener("click", () => doReset(false));
     $("#shuffleBtn").addEventListener("click", () => doReset(true));
     $("#sayBtn").addEventListener("click", sayWord);
-    $("#nextBtn").addEventListener("click", () => {
-      if (currentIndex < wordList.length - 1) loadWord(currentIndex + 1);
-    });
-    $("#prevBtn").addEventListener("click", () => {
-      if (currentIndex > 0) loadWord(currentIndex - 1);
-    });
+    $("#tryAgainBtn").addEventListener("click", startGame);
 
-    // ------- Init
-    loadWord(0);
+    // Init
+    startGame();
   </script>
 </body>
 </html>
