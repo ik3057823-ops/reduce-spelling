@@ -126,9 +126,9 @@
       "digest"
     ];
 
-    let queue = [];           // words to attempt
+    let queue = [];
     let currentWord = "";
-    let slotsPlay = [];       // only letters
+    let slotsPlay = [];
     let bank = [];
     let playableIndices = [];
     let uiToPlayable = [];
@@ -220,7 +220,6 @@
           });
           cell.addEventListener("click", () => { if (slotsPlay[p]) removeFromPlayable(p); });
         }
-
         slotsEl.appendChild(cell);
       }
     }
@@ -244,10 +243,8 @@
     }
 
     function autoCheck() {
-      // if not all filled, wait
-      if (slotsPlay.some(v => v === null)) return;
+      if (slotsPlay.some(v => v === null)) return; // wait until full
 
-      // build user answer including spaces
       let user = "";
       for (let i = 0; i < currentWord.length; i++) {
         if (currentWord[i] === " ") user += " ";
@@ -261,11 +258,10 @@
         results.correct++;
       } else {
         results.wrong++;
-        queue.push(currentWord); // put back at end
+        queue.push(currentWord);
       }
 
-      // move to next after short pause
-      setTimeout(nextWord, 600);
+      setTimeout(nextWord, 800); // short pause for feedback
     }
 
     function sayWord() {
@@ -280,7 +276,7 @@
       buildIndexMaps(currentWord);
       bank = shuffleToo ? shuffle(makeTiles(currentWord)) : makeTiles(currentWord);
       render();
-      $("#message").textContent = `Word ${wordListOriginal.length - queue.length + 1} of ${wordListOriginal.length}`;
+      $("#message").textContent = `Remaining: ${queue.length+1}`;
     }
 
     function nextWord() {
@@ -307,13 +303,11 @@
       nextWord();
     }
 
-    // Controls
     $("#resetBtn").addEventListener("click", () => doReset(false));
     $("#shuffleBtn").addEventListener("click", () => doReset(true));
     $("#sayBtn").addEventListener("click", sayWord);
     $("#tryAgainBtn").addEventListener("click", startGame);
 
-    // Init
     startGame();
   </script>
 </body>
