@@ -19,59 +19,53 @@
     * { box-sizing: border-box; }
     html, body { margin:0; height:100%; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
     .wrap { max-width: 780px; width: 100%; margin: 0 auto; padding: 16px; }
-    .card {
-      background: #fff; border: 1px solid var(--soft-2); border-radius: var(--radius);
-      padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,.04);
-      max-width: 100%;
-    }
+    .card { background:#fff; border:1px solid var(--soft-2); border-radius:var(--radius); padding:20px; box-shadow:0 4px 20px rgba(0,0,0,.04); max-width:100%; }
     h1 { font-size: clamp(20px, 3vw, 28px); margin: 0 0 8px; }
     .sub { color: var(--ink-dim); margin: 0 0 18px; font-size: 14px; }
 
-    .zones { display: grid; gap: 18px; }
-    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-    .label { min-width: 90px; color: var(--ink-dim); font-size: 14px; }
+    .zones { display:grid; gap:18px; }
+    .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .label { min-width:90px; color:var(--ink-dim); font-size:14px; }
 
     .bank, .slots {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
-      gap: 10px; width: 100%;
-      background: var(--soft);
-      padding: 12px; border-radius: var(--radius);
-      border: 1px dashed var(--soft-2);
+      display:grid; grid-template-columns:repeat(auto-fit, minmax(42px,1fr));
+      gap:10px; width:100%; background:var(--soft); padding:12px;
+      border-radius:var(--radius); border:1px dashed var(--soft-2);
     }
 
     button.tile {
-      appearance: none; border: 1px solid var(--soft-2); background: #fff;
-      border-radius: 12px; padding: 10px 0; font-size: 20px; font-weight: 700;
-      cursor: grab; user-select: none; line-height: 1; width: 100%;
-      box-shadow: 0 2px 6px rgba(0,0,0,.05);
-      transition: transform .06s ease;
+      appearance:none; border:1px solid var(--soft-2); background:#fff;
+      border-radius:12px; padding:10px 0; font-size:20px; font-weight:700;
+      cursor:grab; user-select:none; line-height:1; width:100%;
+      box-shadow:0 2px 6px rgba(0,0,0,.05); transition:transform .06s ease;
     }
-    button.tile:active { transform: scale(.98); }
-    button.tile:focus { outline: 2px solid var(--brand); outline-offset: 2px; }
+    button.tile:active { transform:scale(.98); }
+    button.tile:focus { outline:2px solid var(--brand); outline-offset:2px; }
 
-    .slot {
-      display: grid; place-items: center; height: 48px; border-radius: 12px;
-      border: 2px dashed var(--soft-2); background: #fff; font-weight: 700;
-    }
-    .slot.space { background: transparent; border: none; }
-    .slot.filled { border-style: solid; border-color: var(--soft-2); }
-    .slot.ok { background: #ecfdf5; border-color: #86efac; }
-    .slot.bad { background: #fef2f2; border-color: #fecaca; }
+    .slot { display:grid; place-items:center; height:48px; border-radius:12px; border:2px dashed var(--soft-2); background:#fff; font-weight:700; }
+    .slot.space { background:transparent; border:none; }
+    .slot.filled { border-style:solid; border-color:var(--soft-2); }
+    .slot.ok { background:#ecfdf5; border-color:#86efac; }
+    .slot.bad { background:#fef2f2; border-color:#fecaca; }
 
-    .controls { display:flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-    .btn {
-      appearance:none; border:1px solid var(--soft-2); background:#fff; color:var(--ink);
-      padding:10px 14px; border-radius: 12px; cursor:pointer; font-weight:600;
-      touch-action: manipulation;
-    }
-    .btn.primary { background: var(--brand); color:#fff; border-color: var(--brand); }
-    .btn.ghost { background: transparent; }
+    .controls { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+    .btn { appearance:none; border:1px solid var(--soft-2); background:#fff; color:var(--ink); padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600; touch-action:manipulation; }
+    .btn.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+    .btn.ghost { background:transparent; }
 
-    .msg { margin-top: 14px; font-size: 14px; }
-    .msg.ok { color: var(--ok); }
-    .msg.bad { color: var(--bad); }
+    .msg { margin-top: 10px; font-size: 14px; min-height: 1.2em; }
+    .flash { font-weight: 700; }
+    .flash.ok { color: var(--ok); }
+    .flash.bad { color: var(--bad); }
+
     .results { text-align:center; }
+
+    @media (max-width:480px){
+      .wrap{ padding:12px; }
+      button.tile{ font-size:18px; padding:8px 0; }
+      .slots,.bank{ gap:6px; padding:8px; }
+      .controls{ justify-content:flex-start; }
+    }
   </style>
 </head>
 <body>
@@ -98,6 +92,7 @@
       </div>
 
       <div id="message" class="msg" role="status" aria-live="polite"></div>
+      <div id="flash" class="flash" aria-live="polite"></div>
     </div>
 
     <div class="card results" id="resultsCard" style="display:none">
@@ -136,178 +131,155 @@
 
     const $ = sel => document.querySelector(sel);
 
-    function makeTiles(word) {
-      const tiles = [];
-      const count = {};
-      for (const ch of word) {
-        if (ch === " ") continue;
-        count[ch] = (count[ch] || 0) + 1;
-        tiles.push({ id: ch + "-" + count[ch], ch });
-      }
+    function makeTiles(word){
+      const tiles=[]; const count={};
+      for(const ch of word){ if(ch===" ") continue; count[ch]=(count[ch]||0)+1; tiles.push({id:ch+"-"+count[ch], ch}); }
       return tiles;
     }
 
-    function buildIndexMaps(word) {
-      playableIndices = [];
-      uiToPlayable = new Array(word.length).fill(-1);
-      for (let i = 0; i < word.length; i++) {
-        if (word[i] !== " ") {
-          const p = playableIndices.length;
-          playableIndices.push(i);
-          uiToPlayable[i] = p;
-        }
+    function buildIndexMaps(word){
+      playableIndices=[]; uiToPlayable=new Array(word.length).fill(-1);
+      for(let i=0;i<word.length;i++){
+        if(word[i]!==" "){ const p=playableIndices.length; playableIndices.push(i); uiToPlayable[i]=p; }
       }
-      slotsPlay = new Array(playableIndices.length).fill(null);
+      slotsPlay=new Array(playableIndices.length).fill(null);
     }
 
-    function shuffle(arr) {
-      const a = arr.slice();
-      for (let i = a.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]];
-      }
+    function shuffle(arr){
+      const a=arr.slice();
+      for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
       return a;
     }
 
-    function firstEmptyPlayable() {
-      for (let p = 0; p < slotsPlay.length; p++) {
-        if (slotsPlay[p] === null) return p;
-      }
+    function firstEmptyPlayable(){
+      for(let p=0;p<slotsPlay.length;p++){ if(slotsPlay[p]===null) return p; }
       return -1;
     }
 
-    function render() {
-      // Bank
-      const bankEl = $("#bank");
-      bankEl.innerHTML = "";
-      bank.forEach(t => {
-        const b = document.createElement("button");
-        b.className = "tile";
-        b.textContent = t.ch;
-        b.draggable = true;
-        b.dataset.id = t.id;
-        b.addEventListener("click", () => {
-          const p = firstEmptyPlayable();
-          if (p !== -1) moveTileToPlayable(t.id, p);
-        });
-        b.addEventListener("dragstart", e => {
-          e.dataTransfer.setData("text/plain", JSON.stringify({ id: t.id }));
-        });
+    function render(){
+      // bank
+      const bankEl=$("#bank"); bankEl.innerHTML="";
+      bank.forEach(t=>{
+        const b=document.createElement("button");
+        b.className="tile"; b.textContent=t.ch; b.draggable=true; b.dataset.id=t.id;
+        b.addEventListener("click",()=>{ const p=firstEmptyPlayable(); if(p!==-1) moveTileToPlayable(t.id,p); });
+        b.addEventListener("dragstart",e=>{ e.dataTransfer.setData("text/plain", JSON.stringify({id:t.id})); });
         bankEl.appendChild(b);
       });
 
-      // Slots
-      const slotsEl = $("#slots");
-      slotsEl.innerHTML = "";
-      for (let i = 0; i < currentWord.length; i++) {
-        const ch = currentWord[i];
-        const cell = document.createElement("div");
-
-        if (ch === " ") {
-          cell.className = "slot space";
-          cell.textContent = " ";
-        } else {
-          const p = uiToPlayable[i];
-          const filled = slotsPlay[p] ? " filled" : "";
-          cell.className = "slot" + filled;
-          cell.textContent = slotsPlay[p]?.ch || "";
-          cell.addEventListener("dragover", e => e.preventDefault());
-          cell.addEventListener("drop", e => {
-            e.preventDefault();
-            const data = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
-            if (!data.id) return;
-            moveTileToPlayable(data.id, p);
-          });
-          cell.addEventListener("click", () => { if (slotsPlay[p]) removeFromPlayable(p); });
+      // slots
+      const slotsEl=$("#slots"); slotsEl.innerHTML="";
+      for(let i=0;i<currentWord.length;i++){
+        const ch=currentWord[i]; const cell=document.createElement("div");
+        if(ch===" "){ cell.className="slot space"; cell.textContent=" "; }
+        else{
+          const p=uiToPlayable[i];
+          const filled=slotsPlay[p]?" filled":"";
+          cell.className="slot"+filled; cell.textContent=slotsPlay[p]?.ch||"";
+          cell.addEventListener("dragover",e=>e.preventDefault());
+          cell.addEventListener("drop",e=>{ e.preventDefault(); const data=JSON.parse(e.dataTransfer.getData("text/plain")||"{}"); if(!data.id) return; moveTileToPlayable(data.id,p); });
+          cell.addEventListener("click",()=>{ if(slotsPlay[p]) removeFromPlayable(p); });
         }
         slotsEl.appendChild(cell);
       }
     }
 
-    function moveTileToPlayable(tileId, pIndex) {
-      if (slotsPlay[pIndex]) return;
-      const i = bank.findIndex(t => t.id === tileId);
-      if (i === -1) return;
-      const [t] = bank.splice(i, 1);
-      slotsPlay[pIndex] = t;
+    function moveTileToPlayable(tileId,pIndex){
+      if(slotsPlay[pIndex]) return;
+      const i=bank.findIndex(t=>t.id===tileId); if(i===-1) return;
+      const [t]=bank.splice(i,1); slotsPlay[pIndex]=t;
       render();
       autoCheck();
     }
 
-    function removeFromPlayable(pIndex) {
-      const t = slotsPlay[pIndex];
-      if (!t) return;
-      slotsPlay[pIndex] = null;
-      bank.push(t);
+    function removeFromPlayable(pIndex){
+      const t=slotsPlay[pIndex]; if(!t) return;
+      slotsPlay[pIndex]=null; bank.push(t);
       render();
+      clearFlash();
     }
 
-    function autoCheck() {
-      if (slotsPlay.some(v => v === null)) return; // wait until full
-
-      let user = "";
-      for (let i = 0; i < currentWord.length; i++) {
-        if (currentWord[i] === " ") user += " ";
-        else {
-          const p = uiToPlayable[i];
-          user += slotsPlay[p].ch;
-        }
+    function buildUserAttempt(){
+      let user="";
+      for(let i=0;i<currentWord.length;i++){
+        if(currentWord[i]===" ") user+=" ";
+        else { const p=uiToPlayable[i]; user+=slotsPlay[p]?.ch||""; }
       }
+      return user;
+    }
 
-      if (user === currentWord) {
-        results.correct++;
-      } else {
-        results.wrong++;
-        queue.push(currentWord);
+    function markPerLetter(correct){
+      const slotEls=[...document.querySelectorAll("#slots .slot")];
+      for(let i=0;i<currentWord.length;i++){
+        if(currentWord[i]===" ") continue;
+        const p=uiToPlayable[i];
+        const el=slotEls[i];
+        el.classList.remove("ok","bad");
+        el.classList.add(correct ? "ok" : (slotsPlay[p] && slotsPlay[p].ch===currentWord[i] ? "ok" : "bad"));
       }
-
-      setTimeout(nextWord, 800); // short pause for feedback
     }
 
-    function sayWord() {
-      try {
-        const u = new SpeechSynthesisUtterance(currentWord);
-        u.lang = "en-US";
-        speechSynthesis.speak(u);
-      } catch (e) {}
+    function flash(type, text){
+      const f=$("#flash");
+      f.className = "flash " + (type==="ok" ? "ok" : "bad");
+      f.textContent = text;
+    }
+    function clearFlash(){ const f=$("#flash"); f.textContent=""; f.className="flash"; }
+
+    function autoCheck(){
+      if(slotsPlay.some(v=>v===null)) return; // wait until all letters filled
+
+      const user=buildUserAttempt();
+      const isCorrect = (user === currentWord);
+
+      markPerLetter(isCorrect);
+      flash(isCorrect ? "ok" : "bad", isCorrect ? "✓ Correct!" : "✗ Try again later");
+
+      if(isCorrect){ results.correct++; }
+      else{ results.wrong++; queue.push(currentWord); }
+
+      setTimeout(nextWord, 900);
     }
 
-    function doReset(shuffleToo=false) {
+    function sayWord(){
+      try{ const u=new SpeechSynthesisUtterance(currentWord); u.lang="en-US"; speechSynthesis.speak(u); }catch(e){}
+    }
+
+    function doReset(shuffleToo=false){
       buildIndexMaps(currentWord);
       bank = shuffleToo ? shuffle(makeTiles(currentWord)) : makeTiles(currentWord);
       render();
+      clearFlash();
       $("#message").textContent = `Remaining: ${queue.length+1}`;
     }
 
-    function nextWord() {
-      if (queue.length === 0) {
-        showResults();
-        return;
-      }
+    function nextWord(){
+      if(queue.length===0){ showResults(); return; }
       currentWord = queue.shift();
       doReset(true);
     }
 
-    function showResults() {
-      $("#gameCard").style.display = "none";
-      $("#resultsCard").style.display = "block";
-      $("#resultsText").textContent =
-        `You spelled ${results.correct} correctly and ${results.wrong} incorrectly.`;
+    function showResults(){
+      $("#gameCard").style.display="none";
+      $("#resultsCard").style.display="block";
+      $("#resultsText").textContent = `You spelled ${results.correct} correctly and ${results.wrong} incorrectly.`;
     }
 
-    function startGame() {
+    function startGame(){
       queue = wordListOriginal.slice();
-      results = { correct:0, wrong:0 };
-      $("#resultsCard").style.display = "none";
-      $("#gameCard").style.display = "block";
+      results = {correct:0, wrong:0};
+      $("#resultsCard").style.display="none";
+      $("#gameCard").style.display="block";
       nextWord();
     }
 
-    $("#resetBtn").addEventListener("click", () => doReset(false));
-    $("#shuffleBtn").addEventListener("click", () => doReset(true));
-    $("#sayBtn").addEventListener("click", sayWord);
-    $("#tryAgainBtn").addEventListener("click", startGame);
+    // controls
+    $("#resetBtn").addEventListener("click",()=>doReset(false));
+    $("#shuffleBtn").addEventListener("click",()=>doReset(true));
+    $("#sayBtn").addEventListener("click",sayWord);
+    $("#tryAgainBtn").addEventListener("click",startGame);
 
+    // init
     startGame();
   </script>
 </body>
