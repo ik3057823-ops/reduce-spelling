@@ -17,10 +17,11 @@
       --radius: 14px;
     }
     * { box-sizing: border-box; }
-    html, body { margin:0; height:100%; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
+    html, body { margin:0; min-height:100%; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
+    body { overflow-y:auto; -webkit-overflow-scrolling: touch; }
     .wrap { max-width: 780px; width: 100%; margin: 0 auto; padding: 16px; }
-    .card { background:#fff; border:1px solid var(--soft-2); border-radius:var(--radius); padding:20px; box-shadow:0 4px 20px rgba(0,0,0,.04); max-width:100%; }
-    h1 { font-size: clamp(20px, 3vw, 28px); margin: 0 0 8px; }
+    .card { background:#fff; border:1px solid var(--soft-2); border-radius:var(--radius); padding:20px; box-shadow:0 4px 20px rgba(0,0,0,.04); max-width:100%; position: relative; }
+    h1 { font-size: clamp(20px, 3vw, 28px); margin: 0 0 8px; padding-right: 176px; }
     .sub { color: var(--ink-dim); margin: 0 0 18px; font-size: 14px; }
 
     .zones { display:grid; gap:18px; }
@@ -49,7 +50,7 @@
     .slot.bad { background:#fef2f2; border-color:#fecaca; }
 
     .controls { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
-    .btn { appearance:none; border:1px solid var(--soft-2); background:#fff; color:var(--ink); padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600; touch-action:manipulation; }
+    .btn { appearance:none; border:1px solid var(--soft-2); background:#fff; color:#1f2937; padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600; touch-action:manipulation; }
     .btn.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
     .btn.ghost { background:transparent; }
 
@@ -60,17 +61,37 @@
 
     .results { text-align:center; }
 
+    /* — Remaining badge (inside card, top-right, black; NO progress line) — */
+    .remaining-badge{
+      position: absolute; top:16px; right:16px;
+      background:#000; color:#fff; border-radius:9999px;
+      padding:10px 12px; display:flex; align-items:center; gap:10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25); z-index:10;
+      min-width: 180px; height: 36px;
+    }
+    .remaining-badge .text{
+      font-size:13px; letter-spacing:.02em; white-space:nowrap;
+      font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
+    }
+
     @media (max-width:480px){
+      h1{ padding-right: 150px; }
       .wrap{ padding:12px; }
       button.tile{ font-size:18px; padding:8px 0; }
       .slots,.bank{ gap:6px; padding:8px; }
       .controls{ justify-content:flex-start; }
+      .remaining-badge{ top:12px; right:12px; padding:8px 10px; min-width: 160px; height: 34px; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card" id="gameCard">
+      <!-- In-card Remaining indicator (no progress) -->
+      <div id="remainingBadge" class="remaining-badge" aria-live="polite">
+        <span class="text">Remaining: <strong id="remainingCount">0</strong>/<span id="totalCount">0</span></span>
+      </div>
+
       <h1 id="title">Build the Words</h1>
       <p class="sub">Click or drag letters into the slots in the correct order.</p>
 
@@ -88,7 +109,7 @@
       <div class="controls">
         <button class="btn" id="resetBtn">Reset</button>
         <button class="btn" id="shuffleBtn">Shuffle</button>
-        <button class="btn ghost" id="sayBtn">🔈 Say it</button>
+        <button class="btn" id="sayBtn">🔈 Say it</button>
       </div>
 
       <div id="message" class="msg" role="status" aria-live="polite"></div>
@@ -104,21 +125,9 @@
 
   <script>
     const wordListOriginal = [
-      "diet",
-      "junk food",
-      "whole food",
-      "food security",
-      "takeaway",
-      "processed",
-      "perishable",
-      "wholesome",
-      "organic",
-      "nutritious",
-      "consume",
-      "tempted",
-      "reduce",
-      "sample",
-      "digest"
+      "diet","junk food","whole food","food security","takeaway",
+      "processed","perishable","wholesome","organic","nutritious",
+      "consume","tempted","reduce","sample","digest"
     ];
 
     let queue = [];
@@ -128,6 +137,7 @@
     let playableIndices = [];
     let uiToPlayable = [];
     let results = { correct:0, wrong:0 };
+    const totalWords = wordListOriginal.length;
 
     const $ = sel => document.querySelector(sel);
 
@@ -226,6 +236,13 @@
     }
     function clearFlash(){ const f=$("#flash"); f.textContent=""; f.className="flash"; }
 
+    function updateRemainingIndicator(remaining){
+      const countEl = $("#remainingCount");
+      const totalEl = $("#totalCount");
+      countEl.textContent = remaining;
+      totalEl.textContent = totalWords;
+    }
+
     function autoCheck(){
       if(slotsPlay.some(v=>v===null)) return; // wait until all letters filled
 
@@ -250,11 +267,18 @@
       bank = shuffleToo ? shuffle(makeTiles(currentWord)) : makeTiles(currentWord);
       render();
       clearFlash();
-      $("#message").textContent = `Remaining: ${queue.length+1}`;
+      const remaining = queue.length+1;
+      // Ensure the message area stays empty (no duplicate remaining text)
+      $("#message").textContent = "";
+      updateRemainingIndicator(remaining);
     }
 
     function nextWord(){
-      if(queue.length===0){ showResults(); return; }
+      if(queue.length===0){
+        updateRemainingIndicator(0);
+        showResults();
+        return;
+      }
       currentWord = queue.shift();
       doReset(true);
     }
@@ -270,6 +294,7 @@
       results = {correct:0, wrong:0};
       $("#resultsCard").style.display="none";
       $("#gameCard").style.display="block";
+      updateRemainingIndicator(queue.length);
       nextWord();
     }
 
